@@ -1,16 +1,14 @@
-// Builds public/data/{sde,prices}.json: Jita 4-4 order ladders, CCP prices, type names, manufacturing blueprints. Needs curl + bzcat.
-import{execSync}from'node:child_process';import{mkdirSync,writeFileSync}from'node:fs';
+// Builds public/data/{sde,prices}.json: Jita 4-4 order ladders, CCP prices, type names, manufacturing blueprints.
+import{execSync}from'node:child_process';import{mkdirSync,writeFileSync,readFileSync}from'node:fs';
 const ESI='https://esi.evetech.net/latest',JITA=60003760,LEVELS=60;
-const csv=f=>{const t=execSync(`curl -sL https://www.fuzzwork.co.uk/dump/latest/${f}.csv.bz2 | bzcat`,{maxBuffer:1<<30}).toString(),rows=[];let r=[],c='',q=false;
-  for(let i=0;i<t.length;i++){const ch=t[i];
-    if(q){if(ch=='"'){if(t[i+1]=='"'){c+='"';i++}else q=false}else c+=ch}
-    else if(ch=='"')q=true;else if(ch==','){r.push(c);c=''}else if(ch=='\n'){r.push(c);rows.push(r);r=[];c=''}else if(ch!='\r')c+=ch}
-  return rows.slice(1)};
 
-const n={};for(const r of csv('invTypes'))if(r[10]=='1')n[r[0]]=r[2];
+execSync('curl -fsSL https://developers.eveonline.com/static-data/eve-online-static-data-latest-jsonl.zip -o sde.zip && unzip -qo sde.zip -d sde');
+const dir=execSync('dirname "$(find sde -name types.jsonl | head -1)"').toString().trim();
+const jsonl=f=>readFileSync(`${dir}/${f}.jsonl`,'utf8').split('\n').filter(Boolean).map(l=>JSON.parse(l));
+
+const n={};for(const t of jsonl('types'))if(t.published&&t.name?.en)n[t._key]=t.name.en;
 const bp={};
-for(const[t,a,p,q]of csv('industryActivityProducts'))if(a=='1')bp[t]=[+p,+q,[]];
-for(const[t,a,m,q]of csv('industryActivityMaterials'))if(a=='1'&&bp[t])bp[t][2].push([+m,+q]);
+for(const b of jsonl('blueprints')){const m=b.activities?.manufacturing,p=m?.products?.[0];if(p)bp[b._key]=[p.typeID,p.quantity,(m.materials??[]).map(x=>[x.typeID,x.quantity])]}
 
 const url=p=>`${ESI}/markets/10000002/orders/?order_type=all&page=${p}`,first=await fetch(url(1)),pages=+first.headers.get('x-pages'),orders=[];
 const page=async p=>{const r=p==1?first:await fetch(url(p));orders.push(...(await r.json()).filter(o=>o.location_id==JITA))};
